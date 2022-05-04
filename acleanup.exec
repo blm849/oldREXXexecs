@@ -1,0 +1,205 @@
+/***********************************************************************/
+/* ACLEANUP EXEC                               IBM Internal Use Only   */
+/* -------------                                                       */
+/*                                                                     */
+/*  Function: This exec will get rid of any files that have been left  */
+/*  on other's minidisks because of AIDA.                              */
+/*                                                                     */
+/*  Entry Conditions:                                                  */
+/*    EXECIO, ACCEXT                                                   */
+/*                                                                     */
+/*  Exit Conditions:                                                   */
+/*     If you don't tell this exec which stage to perform, it will     */
+/*     exit. IF you have a 5E9 disk attached or an O disk accessed in  */
+/*     stage 1, it will not continue.                                  */
+/*                                                                     */
+/*  Calls to External Routines:                                        */
+/*    ACCEXT.                                                          */
+/*                                                                     */
+/*  Description :                                                      */
+/*     Determine which subroutine to perform. Perform it. Exit.        */
+/*                                                                     */
+/***********************************************************************/
+Trace 'O'                              /* Set the trace option.        */
+ 
+Parse Source . . execname .            /* EXECNAME = name of this exec */
+Parse upper arg stage .
+ 
+Select
+   When stage = 1 then call build_list
+   When stage = 2 then call erase_files
+   Otherwise call help
+End /* Select */
+ 
+Exit                                   /* <=== THE MAIN EXIT.          */
+ 
+/*---------------------------------------------------------------------*/
+ 
+Build_List:
+ 
+/* This subroutine reads the file SUPER PACKAGE and creates the file   */
+/* FILES 2BERASED. It takes a record from SUPER PACKAGE and looks at   */
+/* minidisk listed there. If it not accessing this minidisk now, it    */
+/* does so. It then looks for any files with a filetype of TEMPFIL* on */
+/* that disk. These files are potentially old preinstalled files.      */
+/* It then looks for old backup files. It puts any old preinstalled    */
+/* or installed files it finds in the file FILES 2BERASED.             */
+ 
+Vaddr = ''                             /* Initialize some variables.   */
+Uid   = ''
+Access_ok = 0
+Say 'Performing the command: SET CMSTYPE HT'
+'SET CMSTYPE HT'                       /* Frees the screen of junk.    */
+ 
+'STATE * * O'
+If rc = 0 then signal error1
+ 
+'EXECIO 0 CP (STR Q V 1BF'
+If rc =0 then signal error2
+ 
+'ERASE FILES 2BERASED A'               /* Get rid of the old file.     */
+ 
+/* Read SUPER PACKAGE. SUPER PACKAGE is a compilation of all packages  */
+/* that have been sent out via AIDA, minus the comments.               */
+ 
+'EXECIO * DISKR SUPER PACKAGE * (FINIS STEM INREC.'
+ 
+Do n = 1 to inrec.0                    /* Process each record.         */
+   Old_Uid = uid; Old_Vaddr = vaddr    /* Keep some old INREC values.  */
+ 
+   /* Now parse out the old inrec values. Compare the last mdisk you
+      accessed with the one mentioned in the new INREC. If they are
+      different, link to the new disk and access it with ACCEXT (this
+      will allow you to look at mode 0 files). Look for old preinstalled
+      files on this newly accessed disk.                               */
+ 
+   Parse var inrec.n fn ft . action uid vaddr ' AS ' nfn nft
+   If old_uid ¬= uid & old_vaddr ¬= vaddr then do
+      If access_ok then do
+         'RELEASE O'
+         'EXECIO 0 CP (STRING DET 5E9'
+      End
+      Access_ok = 0
+      'EXECIO 0 CP (STRING LINK' uid vaddr '5E9 RR'
+      If rc = 0 then do
+         'ACCEXT 5E9 O/O * * O*'
+         If rc = 0 then do
+            'LISTFILE @* TEMPFIL* O0 (STACK'
+            Access_ok = 1
+         End
+      End
+   End
+ 
+   /* Now look for old backup files.                                   */
+ 
+   If Access_ok then do
+ 
+      'LISTFILE' reverse(fn) reverse(ft) 'O0 (STACK'
+      If nfn ¬= '' & nft ¬= ''
+         Then 'LISTFILE' reverse(nfn) reverse(nft) 'O0 (STACK'
+ 
+      /* Store the list of old preinstalled and installed files in FILES
+         2BERASED.                                                     */
+ 
+      Do while queued() > 0
+         Pull bfn bft .
+         Outrec = 'Possible file to be erased on' left(uid,8),
+                   left(vaddr,4) ':' bfn bft
+                  'EXECIO 1 DISKW FILES 2BERASED A (VAR OUTREC'
+      End
+ 
+   End /* If Access_ok  */
+ 
+   Else do
+        'SET CMSTYPE RT'
+        Say 'Cannot access' uid vaddr 'successfully. Please check it',
+            'manually.'
+        'SET CMSTYPE HT'
+   End /* Else */
+ 
+End /* Do n = 1 to inrec.0 */
+ 
+'SET CMSTYPE RT'                       /* Go back to the CMS default.  */
+Say 'Performed the command: SET CMSTYPE RT'
+ 
+'REL O (DET'
+ 
+Return
+ 
+/*---------------------------------------------------------------------*/
+ 
+Erase_Files:
+ 
+/* This subroutine reads the file FILES 2BERASED, accesses the
+   appropriate minidisks R/W, and erases the files on them that look
+   like old preinstalled or installed files.                           */
+ 
+Vaddr = ''                             /* Initialize some variables.   */
+Uid   = ''
+Access_ok = 0
+ 
+'EXECIO * DISKR FILES 2BERASED * (FINIS STEM INREC.'
+ 
+Do n = 1 to inrec.0                    /* Process each record.         */
+   Old_Uid = uid; Old_Vaddr = vaddr    /* Keep some old INREC values.  */
+ 
+   /* Now parse out the old inrec values. Compare the last mdisk you
+      accessed with the one mentioned in the new INREC. If they are
+      different, link to the new disk and access it with ACCEXT (this
+      will allow you to look at mode 0 files). Look for old preinstalled
+      files on this newly accessed disk.                               */
+ 
+   Parse var inrec.n 'to be erased on' uid vaddr ':' bad_file
+   If old_uid ¬= uid & old_vaddr ¬= vaddr then do
+      If access_ok then do
+         'RELEASE O'
+         'EXECIO 0 CP (STRING DET 5E9'
+      End
+      Access_ok = 0
+      'EXECIO 0 CP (STRING LINK' uid vaddr '5E9 MR'
+      If rc = 0 then do
+         'ACCEXT 5E9 O/O * * O*'
+         If rc = 0 then access_ok = 1
+      End
+ 
+   End /* If old_uid ¬= uid ... */
+ 
+   If access_ok
+      Then say 'ERASE' bad_file 'O'
+      Else say 'Could not erase' bad_file 'on' uid vaddr'. Please do',
+               'this manually.'
+ 
+End /* Do n = 1 to inrec.0 */
+ 
+ 
+'REL O (DET'
+ 
+Return
+ 
+/*---------------------------------------------------------------------*/
+ 
+Error1:
+'SET CMSTYPE RT'                       /* Go back to the CMS default.  */
+Say 'You have a minidisk accessed as mode O. Please release this and',
+    'again.'
+Say 'Performed the command: SET CMSTYPE RT'
+Exit 1
+ 
+/*---------------------------------------------------------------------*/
+ 
+Error2:
+'SET CMSTYPE RT'                       /* Go back to the CMS default.  */
+Say 'You have a 5E9 minidisk attached. Please detach this minidisk',
+    'and try again.'
+Say 'Performed the command: SET CMSTYPE RT'
+Exit 2
+ 
+/*---------------------------------------------------------------------*/
+ 
+Help:
+Say 'When running this exec, you must it pass it a parameter. This '
+Say 'parameter can be either the number 1 or 2. If you pass this exec'
+Say 'the number 1, it will create the file FILES 2BERASED. If you pass'
+Say 'it the number 2, it will takes the files in FILES 2BERASED and'
+Say 'erase them.'
+Exit 0

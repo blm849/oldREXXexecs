@@ -1,0 +1,21 @@
+/* Author : Bernie Michalik                                            */
+/* Last Updated : Jan. 13, 1987                                        */
+/* Function : To access the Expert System Environment.                 */
+/* Operation : This program first queries this userid's storage, to    */
+/* make sure it has 4M. If it doesn't it tries to redefine this id's   */
+/* storage, so that this id does have 4M. If it already has 4M, then   */
+/* exec links to EXSYSENV's 295, and then runs the ESXD exec. Once the */
+/* user is through with this exec, the program getoff the disk.        */
+ 
+Parse value diag(8,'QUERY VIRTUAL STORAGE') with . '=' storage 'K' .
+If storage < '4096' then do
+   'M * I AM GOING TO HAVE TO REDEFINE YOUR STORAGE TO 4M.'
+   'M * Please run this exec again.'
+   'REDEFINE 4M'
+End /* If storage < '4096' then do */
+ 
+Else do
+'DLINK EXSYSENV 295 B-Z/A RR (QU'
+'ESXDUA'
+'DLINK BERNIE 295 (REL'
+End

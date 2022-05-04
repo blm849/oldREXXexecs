@@ -1,0 +1,131 @@
+/***********************************************************************/
+/* DASDRPT  EXEC                               IBM Internal Use Only   */
+/* -------------                                                       */
+/*                                                                     */
+/*  Function: To process the DASDRPT files created by CYLSREP exec.    */
+/*                                                                     */
+/*  Entry Conditions: A file on the B disk with a filename of FN and   */
+/*  a filetype of DASDRPT.                                             */
+/*                                                                     */
+/*  Exit Conditions: Exit if this file doesn't exist, or if there is   */
+/*  problems reading it.                                               */
+/*                                                                     */
+/*  Calls to External Routines:                                        */
+/*                                                                     */
+/*  Operation:                                                         */
+/*                                                                     */
+/***********************************************************************/
+Trace 'O'                              /*                              */
+                                       /*                              */
+Parse Source . . efn eft efm .         /* Extract exec name and store  */
+Execname = efn eft efm                 /* it in variable 'EXECNAME'.   */
+Arg fn
+Input_file  = fn 'DASDRPT B'
+Temp_file   = 'TEMPOUT FILE B'
+Output_file = fn 'SCRIPT B'
+'ERASE' temp_file
+'ERASE' output_file
+ 
+Call Sieve_report
+Call Produce_new_report
+ 
+Exit                                   /* <=== THE MAIN EXIT.          */
+ 
+/*---------------------------------------------------------------------*/
+ 
+Sieve_report :
+ 
+'EXECIO * DISKR' fn 'DASDRPT B (FINIS'
+Do while queued() > 0 & rc = 0
+   Pull rec
+   Select
+     When word(rec,5) = 0  then output = 1
+     When word(rec,7) > 49 then output = 1
+     When word(rec,5) >= 10 & word(rec,6) < '50%'  then output = 1
+     When word(rec,5) <  10 & word(rec,6) < '25%'  then output = 1
+     Otherwise output = 0
+   End
+   If output then 'EXECIO 1 DISKW' temp_file '(STRING' rec
+End /* Do while queued() > 0 */
+ 
+Return rc
+ 
+ 
+/*---------------------------------------------------------------------*/
+ 
+Produce_new_report :
+ 
+Queue 'SORT * D 14 15 65 75'
+Queue 'FFILE'
+'XEDIT' temp_file '(NOPROF'
+ 
+Queue ':gdoc sec='' IBM Internal Use Only'' '
+Queue ':frontm.'
+Queue ':titlep.'
+Queue ':title.' fn 'DASD REPORT.'
+Queue ':author.Bernie Michalik'
+Queue ':address'
+Queue ':aline.IBM Canada Ltd.'
+Queue ':aline.VM Technical Support'
+Queue ':aline.62/272/3500/MKM'
+Queue ':date.'
+Queue ':eaddress.'
+Queue ':etitlep.'
+Queue ':preface.'
+Queue ':p.This document lists all minidisks in use on' fn 'that obey'
+Queue 'the following criteria :'
+Queue ':ul.'
+Queue ':li. The minidisks have no files on them.'
+Queue ':li. The minidisks have more than 50 cylinders that are not'
+Queue 'being used.'
+Queue ':li. The minidisks are less than 10 cylinders, but no more'
+Queue 'than 25% of the minidisk''s cylinders are in use.'
+Queue ':li. The minidisks have 10 cylinders or more, but less than'
+Queue ' 50% of these cylinders are being used.'
+Queue ':eul.'
+Queue ':p. The list is broken down into division functions. For a'
+Queue 'more detailed description of each division function, type in',
+      ' :hp3.funcrep:ehp3. on your VM terminal.'
+Queue ':toc'
+Queue ':body.'
+'EXECIO' queued() 'DISKW' output_file
+ 
+'EXECIO 1 DISKW' output_file '(STRING .fo off'
+Hdr = ':h1.' fn 'DASD REPORTING FOR DIVISION FUNCTION'
+Old_fc = ''
+Total_freecnt = 0
+ 
+'EXECIO * DISKR' temp_file '(FINIS'
+Do while queued() > 0
+   Pull rec
+   Fc = word(rec,2)
+   If fc ¬= old_fc then do
+ 
+      If old_fc ¬= '' then do
+         'EXECIO 1 DISKW' output_file '(STRING .sp 2'
+         'EXECIO 1 DISKW' output_file '(STRING' ,
+           'The total number of free cylinders for' old_fc '=' freecnt
+      End /* If old_fc ¬= '' */
+ 
+      'EXECIO 1 DISKW' output_file '(STRING' hdr fc
+      Freecnt = word(rec,7)
+   End /* If fc ¬= old_fc then do */
+ 
+   Else do
+        Freecnt = freecnt + word(rec,7)
+        Total_freecnt = Total_freecnt + word(rec,7)
+   End /* Else do */
+ 
+   'EXECIO 1 DISKW' output_file '(STRING' rec
+   Old_fc = fc
+End /* Do while queued() > 0 */
+ 
+'EXECIO 1 DISKW' output_file '(STRING .sp 2'
+'EXECIO 1 DISKW' output_file '(STRING' ,
+   'The total number of free cylinders for' old_fc '=' freecnt
+'EXECIO 1 DISKW' output_file '(STRING :h1.Summary.'
+'EXECIO 1 DISKW' output_file '(STRING :p.:hp3.The total number of free',
+     'cylinders listed in this report is' total_freecnt '.:ehp3.'
+ 
+Return
+ 

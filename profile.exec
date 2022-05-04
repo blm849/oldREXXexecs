@@ -1,0 +1,144 @@
+/***********************************************************************/       
+/* PROFILE  EXEC                               IBM Internal Use Only   */       
+/* -------------                                                       */       
+/*                                                                     */       
+/*  Function: The profile exec for Bernie Michalik's userids.          */       
+/*                                                                     */       
+/*  Entry Conditions: Links to a number of disks.                      */       
+/*                                                                     */       
+/*  Exit Conditions: None.                                             */       
+/*                                                                     */       
+/*  Calls to External Routines: EMSFAL.                                */       
+/*                                                                     */       
+/*  Updates: 11/09/92 - Comment out accesses to some disks that I no   */       
+/*     long have access to on NSS, due to the fact I gave up my RACF   */       
+/*     priveleges there.                                               */       
+/*                                                                     */       
+/***********************************************************************/       
+                                                                                
+Trace '?o'                             /* Set the trace option.        */       
+                                                                                
+'ID ( LIFO'                            /* What system are we on?       */       
+Pull userid . system .                                                          
+                                                                                
+/*                    Set up the PF keys.                              */       
+                                                                                
+'CP SET PF01 IMMED EXEC PROPST REMOTE DISC'                                     
+'CP SET PF13 IMMED EXEC PROPST REMOTE DISC'                                     
+'CP SET PF02 GOTO TOR'                                                          
+'CP SET PF14 GOTO TOR'                                                          
+'CP SET PF03 RETRIEVE'                                                          
+'CP SET PF15 RETRIEVE'                                                          
+'CP SET PF04 IMMED FL'                                                          
+'CP SET PF16 IMMED FL'                                                          
+'CP SET PF05 IMMED LAMSERV'                                                     
+'CP SET PF17 IMMED LAMSERV'                                                     
+'CP SET PF06 IMMED RDRLIST'                                                     
+'CP SET PF18 IMMED RDRLIST'                                                     
+'CP SET PF07 DELAY TELL BERNIER CMD '                                           
+'CP SET PF19 DELAY TELL BERNIER CMD '                                           
+'CP SET PF08 DELAY SM AUTOTASK hh:mm:00 +* ! TELL BERNIE'                       
+'CP SET PF20 DELAY SM AUTOTASK hh:mm:00 +* ! TELL BERNIE'                       
+'CP SET PF09 IMMED STOP'                                                        
+'CP SET PF21 IMMED STOP'                                                        
+'CP SET PF10 RETRIEVE       '                                                   
+'CP SET PF22 RETRIEVE       '                                                   
+'CP SET PF11 IMMED CPUTIME TODAY'                                               
+'CP SET PF23 IMMED CPUTIME TODAY'                                               
+                                                                                
+'CP SP D DIST S62D325'                 /* Set the punch's dist code.   */       
+'CP SP 00E RSCS NOCONT FORM 1PRT'      /* Set the defaults on the      */       
+'CP TAG DEV 00E TORMVSG ANYLOCAL 0'    /* virtual printer.             */       
+                                                                                
+If userid = 'BERNIE' & system = 'TOROVM1' Then 'CP DET 347'                     
+                                                                                
+/*                    Set up the virtual console.                      */       
+                                                                                
+'CP SCREEN STA RED UNDER    '                                                   
+'CP SCREEN INA TUR UNDER    '                                                   
+'CP SCREEN CPOUT YELLOW NONE'                                                   
+/*'CP SCREEN VMOUT RED    NONE' */                                              
+'CP SCREEN VMOUT BLUE    NONE'                                                  
+'CP SCREEN INR   PINK   NONE'                                                   
+'CP TERM CHARDEL ~          '                                                   
+                                                                                
+'SET EMSG ON'                          /* Show error messages.         */       
+'SET RDYMSG LMSG'                      /* Show the long form.          */       
+'VMFCLEAR'                             /* Clear the screen.            */       
+                                                                                
+'SYNONYM BERNIE'                       /* Load my synonym table.       */       
+'CLS'                                  /* Clear the screen.            */       
+                                                                                
+/* Access appropriate disks.                                           */       
+                                                                                
+'EMSFAL U-W'                           /* Get available modes.         */       
+If rc = 0                                                                       
+   Then Pull . available_modes                                                  
+   Else Available_Modes = ''                                                    
+                                                                                
+'EXECIO * CP (STRING Q V DASD'         /* Query all my attached disks. */       
+RW_disks = 0                           /* Count R/W disks.             */       
+Do while queued() > 0                  /* Search for R/W disks.        */       
+   Pull . addr . . mode .              /* Access most R/W disks.       */       
+   If addr <> '191' & addr <> '192' & mode = 'R/W' then do                      
+      If addr = '334'                                                           
+         Then 'ACCESS 334 B'                                                    
+         Else Do                                                                
+            RW_disks = RW_disks + 1                                             
+            'ACCESS' addr word(available_modes,RW_Disks)                        
+         End                                                                    
+   End                                                                          
+End                                                                             
+                                                                                
+/* Perform some miscellaneous settings.                                */       
+                                                                                
+'CP PUR RDR CL W'                      /* These are autotask files.    */       
+'SET LANGUAGE AMENG (ADD ARI USER'     /* This is need for ISQL.       */       
+'DLINK SETNAMES BERNIE'                /* Point DLINK to nicknames.    */       
+                                                                                
+/* Make system dependent settings.                                     */       
+                                                                                
+If userid = 'BERNIE' & system = 'TOROVM1' Then Do                               
+   'CP SET PF01 IMMED EXEC AWAY'                                                
+   'CP SET PF13 IMMED EXEC AWAY'                                                
+   'CP SET PF02 IMMED EXEC OV'                                                  
+   'CP SET PF14 IMMED EXEC OV'                                                  
+   'CP SET PF12 IMMED DESKTOP'                                                  
+   'CP SET PF24 IMMED DESKTOP'                                                  
+   'CP SET PF12 IMMED OFS'                                                      
+   'CP SET PF24 IMMED OFS'                                                      
+   'EXEC DLINK $PROFADM 291 J'         /* These 2 dlinks allow me to   */       
+   'EXEC DLINK $PROFADM 399 K'         /* run OVRDR exec.              */       
+   'VMFCLEAR'                                                                   
+   'EXEC QUOTE 1'                                                               
+   Say ' '                                                                      
+   'WIZDOM'                                                                     
+                                                                                
+End                                                                             
+                                                                                
+/*                                                                              
+If userid = 'BERNIE' & system = 'TORVM9' Then Do                                
+   'CP SPOOL CONSOLE START BERNIE'                                              
+End                                                                             
+*/                                                                              
+                                                                                
+If userid = 'BERNIE' & system = 'TORVMNSS' Then Do                              
+   'ACCESS 19C M'                                                               
+   'DLINK VMSSTOOL 191 L RR (PERM'                                              
+/* 'DLINK VMSSTOOL 200 N-T RR (PERM'      Taken from LOCTOOL exec.     */       
+   'CLS'                                                                        
+   'ZM'                                                                         
+End                                                                             
+                                                                                
+If userid = 'MICHALIK' & system = 'TORVMNSS' Then Do                            
+   'CP SET PF01 IMMED EXEC PROPST CAPES DISC'                                   
+   'CP SET PF13 IMMED EXEC PROPST CAPES DISC'                                   
+End                                                                             
+                                                                                
+'EXECIO 1 CP (STRING Q' userid()                                                
+If rc = 0 & queued() = 1 Then Do                                                
+   Pull . '-' id_status .                                                       
+   If id_status = 'DSC' Then 'EXEC DSC'                                         
+End                                                                             
+                                                                                
+Exit                                   /* <===== The Main Exit.        */       
